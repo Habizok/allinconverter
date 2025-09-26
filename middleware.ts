@@ -1,29 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+/**
+ * 🌍 AllInConverter - i18n Middleware
+ * 
+ * SEO-SAFE automatic language detection and redirection:
+ * 
+ * ✅ FIRST VISIT ONLY: Redirect based on Accept-Language header
+ * ✅ COOKIE PERSISTENCE: Save user choice for 1 year
+ * ✅ BOT PROTECTION: Never redirect bots (Googlebot, Bingbot, etc.)
+ * ✅ SEO SAFE: Bots can crawl all language versions via hreflang
+ * 
+ * Flow:
+ * 1. Bot? → No redirect (SEO safety)
+ * 2. Has cookie? → Redirect to saved language
+ * 3. First visit? → Detect from Accept-Language → Set cookie → Redirect
+ * 4. Already localized? → Skip middleware
+ */
+
 const locales = ['en', 'hu', 'sk', 'de', 'pl', 'ro', 'cs']
 const defaultLocale = 'en'
 
-// Bot detection patterns
+// Comprehensive bot detection patterns (SEO-safe)
 const botPatterns = [
-  'googlebot', 'bingbot', 'duckduckbot', 'yandex', 'baidu',
+  'googlebot', 'bingbot', 'duckduckbot', 'yandexbot', 'baiduspider',
   'facebookexternalhit', 'twitterbot', 'linkedinbot', 'whatsapp',
-  'telegrambot', 'slackbot', 'discordbot', 'applebot'
+  'telegrambot', 'slackbot', 'discordbot', 'applebot', 'crawler',
+  'spider', 'bot', 'crawling', 'indexing', 'seo'
 ]
 
 function isBot(userAgent: string): boolean {
-  return botPatterns.some(pattern => 
-    userAgent.toLowerCase().includes(pattern)
-  )
+  const ua = userAgent.toLowerCase()
+  return botPatterns.some(pattern => ua.includes(pattern))
 }
 
 function getLocaleFromAcceptLanguage(acceptLanguage: string): string {
-  // Parse Accept-Language header
+  // Parse Accept-Language header with proper quality values
   const languages = acceptLanguage
     .split(',')
     .map(lang => {
       const [locale, qValue] = lang.trim().split(';q=')
       return {
-        locale: locale.split('-')[0], // Extract language code
+        locale: locale.split('-')[0].toLowerCase(), // Extract language code
         quality: qValue ? parseFloat(qValue) : 1.0
       }
     })
@@ -31,7 +48,7 @@ function getLocaleFromAcceptLanguage(acceptLanguage: string): string {
 
   // Find first supported locale
   for (const { locale } of languages) {
-    if (locales.includes(locale)) {
+    if (locales.includes(locale as any)) {
       return locale
     }
   }
@@ -61,20 +78,20 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Don't redirect bots
+  // 🚨 CRITICAL: Don't redirect bots - SEO safety!
   if (isBot(userAgent)) {
     return NextResponse.next()
   }
 
-  // Check if user has language preference cookie
+  // Check if user has language preference cookie (persistent choice)
   const cookieLocale = request.cookies.get('lang')?.value
-  if (cookieLocale && locales.includes(cookieLocale)) {
+  if (cookieLocale && locales.includes(cookieLocale as any)) {
     const url = request.nextUrl.clone()
     url.pathname = `/${cookieLocale}${pathname}`
     return NextResponse.redirect(url, 302)
   }
 
-  // Detect locale from Accept-Language header
+  // First visit: Detect locale from Accept-Language header
   const acceptLanguage = request.headers.get('accept-language') || ''
   let detectedLocale = getLocaleFromAcceptLanguage(acceptLanguage)
   
@@ -83,17 +100,18 @@ export function middleware(request: NextRequest) {
     detectedLocale = getLocaleFromGeoIP(request)
   }
 
-  // Redirect to localized path
+  // Redirect to localized path (first visit only)
   const url = request.nextUrl.clone()
   url.pathname = `/${detectedLocale}${pathname}`
   
   const response = NextResponse.redirect(url, 302)
   
-  // Set language cookie
+  // Set language cookie for future visits (1 year persistence)
   response.cookies.set('lang', detectedLocale, {
     maxAge: 31536000, // 1 year
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production'
+    secure: process.env.NODE_ENV === 'production',
+    path: '/'
   })
 
   return response
