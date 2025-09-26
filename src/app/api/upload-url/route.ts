@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { storageManager } from '@/lib/storage'
+import { rateLimitMiddleware } from '@/lib/rate-limit'
 import { v4 as uuidv4 } from 'uuid'
 
 export async function POST(request: NextRequest) {
+  // Apply rate limiting
+  const rateLimitResponse = await rateLimitMiddleware(request, 'upload')
+  if (rateLimitResponse) {
+    return rateLimitResponse
+  }
+
   try {
     const { fileName, fileType, fileSize } = await request.json()
 

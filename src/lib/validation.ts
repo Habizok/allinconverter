@@ -1,6 +1,9 @@
+import { validateFileType } from './magic-bytes'
+
 export interface ValidationResult {
   isValid: boolean
   error?: string
+  detectedType?: any
 }
 
 export interface FileValidationOptions {
@@ -8,9 +11,10 @@ export interface FileValidationOptions {
   allowedTypes: string[]
   allowedExtensions: string[]
   checkMagicBytes?: boolean // Whether to check file magic bytes
+  converterId?: string // Required for magic bytes validation
 }
 
-export function validateFile(file: File, options: FileValidationOptions): ValidationResult {
+export async function validateFile(file: File, options: FileValidationOptions): Promise<ValidationResult> {
   // Check file size
   if (file.size > options.maxSize) {
     const maxSizeMB = Math.round(options.maxSize / (1024 * 1024))
@@ -34,6 +38,36 @@ export function validateFile(file: File, options: FileValidationOptions): Valida
     return {
       isValid: false,
       error: `File extension .${extension} is not supported`
+    }
+  }
+
+  // Magic bytes validation (server-side only)
+  if (options.checkMagicBytes && options.converterId) {
+    try {
+      // Read first 4KB for magic bytes detection
+      const buffer = await file.slice(0, 4096).arrayBuffer()
+      const uint8Array = new Uint8Array(buffer)
+      const nodeBuffer = Buffer.from(uint8Array)
+      
+      const magicResult = validateFileType(nodeBuffer, options.converterId)
+      
+      if (!magicResult.isValid) {
+        return {
+          isValid: false,
+          error: magicResult.error || 'File type validation failed',
+          detectedType: magicResult.detectedType
+        }
+      }
+      
+      return {
+        isValid: true,
+        detectedType: magicResult.detectedType
+      }
+    } catch (error) {
+      return {
+        isValid: false,
+        error: 'Failed to validate file content'
+      }
     }
   }
 

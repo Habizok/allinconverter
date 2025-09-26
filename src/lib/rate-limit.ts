@@ -1,164 +1,187 @@
-import { NextRequest } from 'next/server'
-import IORedis from 'ioredis'
+// src/lib/rate-limit.ts
+// Enhanced rate limiting for critical endpoints
 
-const redis = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379')
+import { NextRequest, NextResponse } from 'next/server'
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
 
-interface RateLimitConfig {
-  windowMs: number // Time window in milliseconds
-  maxRequests: number // Maximum requests per window
-  keyGenerator?: (req: NextRequest) => string
-}
-
-interface RateLimitResult {
-  success: boolean
-  limit: number
-  remaining: number
-  resetTime: number
-  retryAfter?: number
-}
-
-export class RateLimiter {
-  private config: RateLimitConfig
-
-  constructor(config: RateLimitConfig) {
-    this.config = config
-  }
-
-  async checkLimit(req: NextRequest): Promise<RateLimitResult> {
-    const key = this.generateKey(req)
-    const now = Date.now()
-    const windowStart = now - this.config.windowMs
-
-    try {
-      // Use Redis sorted set to track requests
-      const pipeline = redis.pipeline()
-      
-      // Remove old entries
-      pipeline.zremrangebyscore(key, 0, windowStart)
-      
-      // Count current requests
-      pipeline.zcard(key)
-      
-      // Add current request
-      pipeline.zadd(key, now, `${now}-${Math.random()}`)
-      
-      // Set expiration
-      pipeline.expire(key, Math.ceil(this.config.windowMs / 1000))
-      
-      const results = await pipeline.exec()
-      
-      if (!results) {
-        throw new Error('Redis pipeline failed')
-      }
-
-      const currentCount = results[1][1] as number
-      const remaining = Math.max(0, this.config.maxRequests - currentCount - 1)
-      const resetTime = now + this.config.windowMs
-
-      if (currentCount >= this.config.maxRequests) {
-        return {
-          success: false,
-          limit: this.config.maxRequests,
-          remaining: 0,
-          resetTime,
-          retryAfter: Math.ceil((resetTime - now) / 1000)
-        }
-      }
-
-      return {
-        success: true,
-        limit: this.config.maxRequests,
-        remaining,
-        resetTime
-      }
-    } catch (error) {
-      console.error('Rate limit check failed:', error)
-      // Fail open - allow request if Redis is down
-      return {
-        success: true,
-        limit: this.config.maxRequests,
-        remaining: this.config.maxRequests,
-        resetTime: now + this.config.windowMs
-      }
-    }
-  }
-
-  private generateKey(req: NextRequest): string {
-    if (this.config.keyGenerator) {
-      return this.config.keyGenerator(req)
-    }
-
-    // Default: IP-based rate limiting
-    const ip = req.ip || req.headers.get('x-forwarded-for') || 'unknown'
-    const endpoint = req.nextUrl.pathname
-    
-    return `rate_limit:${endpoint}:${ip}`
-  }
-}
-
-// Pre-configured rate limiters
-export const apiRateLimiter = new RateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 60, // 60 requests per minute
-  keyGenerator: (req) => {
-    const ip = req.ip || req.headers.get('x-forwarded-for') || 'unknown'
-    return `api_limit:${ip}`
-  }
+// Initialize Redis for rate limiting
+const redis = new Redis({
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  token: process.env.REDIS_TOKEN || 'local_token',
 })
 
-export const uploadRateLimiter = new RateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 10, // 10 uploads per minute
-  keyGenerator: (req) => {
-    const ip = req.ip || req.headers.get('x-forwarded-for') || 'unknown'
-    return `upload_limit:${ip}`
-  }
-})
-
-export const downloadRateLimiter = new RateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 30, // 30 downloads per minute
-  keyGenerator: (req) => {
-    const ip = req.ip || req.headers.get('x-forwarded-for') || 'unknown'
-    return `download_limit:${ip}`
-  }
-})
-
-// Utility function to create rate limit headers
-export function createRateLimitHeaders(result: RateLimitResult): Record<string, string> {
-  return {
-    'X-RateLimit-Limit': result.limit.toString(),
-    'X-RateLimit-Remaining': result.remaining.toString(),
-    'X-RateLimit-Reset': Math.ceil(result.resetTime / 1000).toString(),
-    ...(result.retryAfter && { 'Retry-After': result.retryAfter.toString() })
-  }
-}
-
-// Middleware helper for rate limiting
-export async function withRateLimit(
-  req: NextRequest,
-  limiter: RateLimiter,
-  onLimitExceeded?: (result: RateLimitResult) => Response
-): Promise<{ success: boolean; result: RateLimitResult; response?: Response }> {
-  const result = await limiter.checkLimit(req)
+// Different rate limits for different endpoint types
+const rateLimiters = {
+  // File upload endpoints - stricter limits
+  upload: new Ratelimit({
+    redis: redis,
+    limiter: Ratelimit.slidingWindow(5, '60s'), // 5 uploads per minute
+    analytics: true,
+    prefix: '@upstash/ratelimit/upload',
+  }),
   
-  if (!result.success) {
-    const response = onLimitExceeded ? onLimitExceeded(result) : new Response(
-      JSON.stringify({
-        error: 'Rate limit exceeded',
-        retryAfter: result.retryAfter
-      }),
-      {
-        status: 429,
-        headers: {
-          'Content-Type': 'application/json',
-          ...createRateLimitHeaders(result)
-        }
-      }
-    )
+  // Conversion endpoints - moderate limits
+  convert: new Ratelimit({
+    redis: redis,
+    limiter: Ratelimit.slidingWindow(10, '60s'), // 10 conversions per minute
+    analytics: true,
+    prefix: '@upstash/ratelimit/convert',
+  }),
+  
+  // Download endpoints - stricter limits
+  download: new Ratelimit({
+    redis: redis,
+    limiter: Ratelimit.slidingWindow(20, '60s'), // 20 downloads per minute
+    analytics: true,
+    prefix: '@upstash/ratelimit/download',
+  }),
+  
+  // General API endpoints
+  api: new Ratelimit({
+    redis: redis,
+    limiter: Ratelimit.slidingWindow(30, '60s'), // 30 requests per minute
+    analytics: true,
+    prefix: '@upstash/ratelimit/api',
+  }),
+  
+  // Status check endpoints - more lenient
+  status: new Ratelimit({
+    redis: redis,
+    limiter: Ratelimit.slidingWindow(60, '60s'), // 60 status checks per minute
+    analytics: true,
+    prefix: '@upstash/ratelimit/status',
+  })
+}
+
+export type RateLimitType = keyof typeof rateLimiters
+
+/**
+ * Apply rate limiting to a request
+ * @param request - Next.js request object
+ * @param type - Type of endpoint for appropriate rate limiting
+ * @returns Rate limit result or null if limit exceeded
+ */
+export async function applyRateLimit(
+  request: NextRequest, 
+  type: RateLimitType = 'api'
+): Promise<{ success: boolean; limit: number; remaining: number; reset: number } | null> {
+  try {
+    // Get client IP and User Agent for rate limiting
+    const ip = getClientIP(request)
+    const userAgent = request.headers.get('user-agent') || 'unknown'
     
-    return { success: false, result, response }
+    // Create unique identifier combining IP and User Agent
+    const identifier = `${ip}:${userAgent}`
+    
+    const limiter = rateLimiters[type]
+    const { success, limit, remaining, reset } = await limiter.limit(identifier)
+    
+    return { success, limit, remaining, reset }
+  } catch (error) {
+    console.error('Rate limiting error:', error)
+    // In case of Redis failure, allow the request but log the error
+    return { success: true, limit: 0, remaining: 0, reset: 0 }
+  }
+}
+
+/**
+ * Get client IP address from request
+ * @param request - Next.js request object
+ * @returns Client IP address
+ */
+function getClientIP(request: NextRequest): string {
+  // Check for forwarded IP (from proxy/load balancer)
+  const forwarded = request.headers.get('x-forwarded-for')
+  if (forwarded) {
+    return forwarded.split(',')[0].trim()
   }
   
-  return { success: true, result }
+  // Check for real IP header
+  const realIP = request.headers.get('x-real-ip')
+  if (realIP) {
+    return realIP
+  }
+  
+  // Check for CF-Connecting-IP (Cloudflare)
+  const cfIP = request.headers.get('cf-connecting-ip')
+  if (cfIP) {
+    return cfIP
+  }
+  
+  // Fallback to request IP
+  return request.ip || '127.0.0.1'
+}
+
+/**
+ * Create rate limit response
+ * @param limit - Rate limit info
+ * @returns NextResponse with 429 status
+ */
+export function createRateLimitResponse(limit: { limit: number; remaining: number; reset: number }): NextResponse {
+  const response = NextResponse.json(
+    { 
+      error: 'Too many requests',
+      message: 'Rate limit exceeded. Please try again later.',
+      retryAfter: Math.ceil((limit.reset - Date.now()) / 1000)
+    },
+    { status: 429 }
+  )
+  
+  // Add rate limit headers
+  response.headers.set('X-RateLimit-Limit', limit.limit.toString())
+  response.headers.set('X-RateLimit-Remaining', limit.remaining.toString())
+  response.headers.set('X-RateLimit-Reset', limit.reset.toString())
+  response.headers.set('Retry-After', Math.ceil((limit.reset - Date.now()) / 1000).toString())
+  
+  return response
+}
+
+/**
+ * Middleware function for rate limiting
+ * @param request - Next.js request object
+ * @param type - Rate limit type
+ * @returns NextResponse or null (if request should proceed)
+ */
+export async function rateLimitMiddleware(
+  request: NextRequest,
+  type: RateLimitType = 'api'
+): Promise<NextResponse | null> {
+  const limitResult = await applyRateLimit(request, type)
+  
+  if (!limitResult) {
+    // Redis error - allow request but log
+    console.warn('Rate limiting disabled due to Redis error')
+    return null
+  }
+  
+  if (!limitResult.success) {
+    return createRateLimitResponse(limitResult)
+  }
+  
+  return null // Request can proceed
+}
+
+/**
+ * Log rate limit events for monitoring
+ * @param request - Next.js request object
+ * @param type - Rate limit type
+ * @param limit - Rate limit info
+ */
+export function logRateLimitEvent(
+  request: NextRequest,
+  type: RateLimitType,
+  limit: { success: boolean; limit: number; remaining: number; reset: number }
+): void {
+  const ip = getClientIP(request)
+  const userAgent = request.headers.get('user-agent') || 'unknown'
+  const endpoint = request.nextUrl.pathname
+  
+  console.log(`Rate limit event: ${type} - IP: ${ip} - Endpoint: ${endpoint} - Success: ${limit.success} - Remaining: ${limit.remaining}`)
+  
+  // Log to external monitoring service if configured
+  if (process.env.NODE_ENV === 'production' && !limit.success) {
+    // TODO: Send to monitoring service (Sentry, DataDog, etc.)
+    console.warn(`Rate limit exceeded: ${ip} - ${endpoint} - ${type}`)
+  }
 }

@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { storageManager } from '@/lib/storage'
 import { queueManager } from '@/lib/queue'
+import { rateLimitMiddleware } from '@/lib/rate-limit'
 
 export async function GET(request: NextRequest) {
+  // Apply rate limiting
+  const rateLimitResponse = await rateLimitMiddleware(request, 'download')
+  if (rateLimitResponse) {
+    return rateLimitResponse
+  }
+
   try {
     const { searchParams } = new URL(request.url)
     const key = searchParams.get('key')
@@ -38,19 +45,24 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Log download attempt
-    console.log(`Download requested: jobId=${jobId}, key=${key}, ip=${request.ip}, userAgent=${request.headers.get('user-agent')}`)
-
-    // Generate signed URL with short expiration (5 minutes)
-    const downloadUrl = await storageManager.getFileUrl(key)
+    // Enhanced security logging
+    const clientIP = request.ip || 'unknown'
+    const userAgent = request.headers.get('user-agent') || 'unknown'
+    const referer = request.headers.get('referer') || 'unknown'
     
-    // TODO: Add analytics tracking here
-    // await trackDownload(jobId, request.ip, request.headers.get('user-agent'))
+    console.log(`Download requested: jobId=${jobId}, key=${key}, ip=${clientIP}, userAgent=${userAgent}, referer=${referer}`)
+
+    // Generate short-lived signed URL (5 minutes max)
+    const downloadUrl = await storageManager.getFileUrl(key, 300) // 5 minutes
+    
+    // Log successful download generation
+    console.log(`Download URL generated for jobId=${jobId}, expires in 5 minutes`)
 
     return NextResponse.json({
       downloadUrl,
       expiresIn: 300, // 5 minutes
-      fileName: key.split('/').pop() || 'download'
+      fileName: key.split('/').pop() || 'download',
+      message: 'Download URL generated. File will be available for 5 minutes.'
     })
 
   } catch (error) {

@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { queueManager } from '@/lib/queue'
 import { storageManager } from '@/lib/storage'
+import { validateFile } from '@/lib/validation'
+import { rateLimitMiddleware } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
+  // Apply rate limiting
+  const rateLimitResponse = await rateLimitMiddleware(request, 'convert')
+  if (rateLimitResponse) {
+    return rateLimitResponse
+  }
+
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -16,12 +24,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate file size (512MB limit)
-    const maxSize = 512 * 1024 * 1024 // 512MB
-    if (file.size > maxSize) {
+    // Enhanced file validation with magic bytes
+    const validationResult = await validateFile(file, {
+      maxSize: 512 * 1024 * 1024, // 512MB
+      allowedTypes: [], // Will be checked by magic bytes
+      allowedExtensions: [], // Will be checked by magic bytes
+      checkMagicBytes: true,
+      converterId: converter
+    })
+
+    if (!validationResult.isValid) {
       return NextResponse.json(
-        { error: 'File too large. Maximum size is 512MB.' },
-        { status: 400 }
+        { error: validationResult.error || 'File validation failed' },
+        { status: 415 } // Unsupported Media Type
       )
     }
 
@@ -35,10 +50,12 @@ export async function POST(request: NextRequest) {
     // Create conversion job
     const jobId = await queueManager.createJob(converter, inputKey, outputKey, options)
 
+    // Return only jobId - no direct download URL for security
     return NextResponse.json({
       jobId,
       status: 'pending',
-      progress: 0
+      progress: 0,
+      message: 'Conversion started. Use jobId to check status and get download URL.'
     })
 
   } catch (error) {
