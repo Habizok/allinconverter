@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "name": "allinconverter",
+    "version": "1.0.0",
+    "updatedAt": "2024-12-19T10:00:00Z",
+    "domain": "allinconverter.com",
+    "email": "info@allinconverter.com"
+  },
+  "locales": ["en", "hu", "sk", "de", "pl", "ro", "cs"],
+  "routes": {
+    "converters": [
+      { "slug": "pdf-to-docx", "locales": ["en", "hu", "sk"], "status": "live" },
+      { "slug": "docx-to-pdf", "locales": ["en", "hu", "sk"], "status": "live" },
+      { "slug": "mp4-to-mp3", "locales": ["en", "hu", "sk"], "status": "live" },
+      { "slug": "jpg-to-png", "locales": ["en", "hu", "sk"], "status": "live" },
+      { "slug": "png-to-jpg", "locales": ["en", "hu", "sk"], "status": "live" },
+      { "slug": "heic-to-jpg", "locales": ["en", "hu", "sk"], "status": "live" }
+    ],
+    "tools": [
+      { "slug": "remove-background", "locales": ["en", "hu"], "status": "beta" },
+      { "slug": "image-compress", "locales": ["en", "hu"], "status": "beta" },
+      { "slug": "video-compress", "locales": ["en", "hu"], "status": "beta" }
+    ]
+  },
+  "limits": {
+    "free": { "maxFileMB": 512, "parallelJobs": 1, "timeoutSec": 120 }
+  },
+  "ads": {
+    "interstitialOnDownload": true,
+    "network": "AdX/Alt",
+    "placements": ["sidebar", "inline", "modal"]
+  },
+  "storage": {
+    "provider": "R2",
+    "region": "auto",
+    "bucket": "aic-files",
+    "retentionMinutes": 60
+  },
+  "queue": {
+    "driver": "bullmq",
+    "redis": "redis://localhost:6379"
+  },
+  "billing": {
+    "premium": false,
+    "apiKeys": false,
+    "stripe": false
+  },
+  "compliance": {
+    "gdpr": true,
+    "autoDeleteMinutes": 60
+  },
+  "telemetry": {
+    "analytics": "GA4",
+    "error": "Sentry"
+  }
+}
