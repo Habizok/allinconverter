@@ -9,7 +9,9 @@ const converters = [
   'jpg-to-png', 'png-to-jpg', 'heic-to-jpg', 'webp-to-jpg', 'svg-to-png',
   'mp4-to-mp3', 'mov-to-mp4', 'wav-to-mp3', 'srt-to-vtt',
   'epub-to-mobi', 'mobi-to-epub', 'json-to-csv',
-  'remove-background', 'image-upscaler'
+  'remove-background', 'image-upscaler',
+  'image-compress', 'video-compress', 'pdf-compress',
+  'add-watermark', 'crop-image', 'resize-image'
 ]
 
 // Static pages
