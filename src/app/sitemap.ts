@@ -11,7 +11,11 @@ const converters = [
   'epub-to-mobi', 'mobi-to-epub', 'json-to-csv',
   'remove-background', 'image-upscaler',
   'image-compress', 'video-compress', 'pdf-compress',
-  'add-watermark', 'crop-image', 'resize-image'
+  'add-watermark', 'crop-image', 'resize-image',
+  'doc-to-pdf', 'rtf-to-pdf', 'xlsx-to-csv', 'csv-to-xlsx',
+  'mp3-to-wav', 'aac-to-mp3', 'flac-to-mp3',
+  'avi-to-mp4', 'mkv-to-mp4', 'mp4-to-gif',
+  'bmp-to-jpg', 'tiff-to-jpg', 'gif-to-mp4', 'jpg-to-webp', 'png-to-webp'
 ]
 
 // Static pages
