@@ -3,8 +3,8 @@ import { ArrowRightIcon, ShieldCheckIcon, ClockIcon } from '@heroicons/react/24/
 
 export default function Hero() {
   return (
-    <div className="relative isolate px-6 pt-14 lg:px-8">
-      <div className="mx-auto max-w-4xl py-32 sm:py-48 lg:py-56">
+    <div className="relative isolate px-6 pt-8 lg:px-8">
+      <div className="mx-auto max-w-4xl py-16 sm:py-24 lg:py-32">
         <div className="text-center">
           <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl">
             Convert Files{' '}
