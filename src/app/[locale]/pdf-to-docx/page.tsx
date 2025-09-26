@@ -1,5 +1,6 @@
 import { Metadata } from 'next'
 import ConverterPage from '@/components/ConverterPage'
+import { generateConverterMetadata } from '@/lib/seo-converter'
 
 type Props = {
   params: { locale: string }
@@ -8,30 +9,31 @@ type Props = {
 export async function generateMetadata({ params }: { params: { locale: string } }): Promise<Metadata> {
   const { locale } = params
   
-  const titles = {
-    en: 'PDF to DOCX Converter - Free Online PDF to Word Converter',
-    hu: 'PDF DOCX konvertáló - Ingyenes online PDF Word konvertáló',
-    sk: 'PDF na DOCX konvertor - Bezplatný online PDF na Word konvertor',
-    de: 'PDF zu DOCX Konverter - Kostenloser Online PDF zu Word Konverter',
-    pl: 'Konwerter PDF na DOCX - Darmowy online konwerter PDF na Word',
-    ro: 'Convertor PDF la DOCX - Convertor online gratuit PDF la Word',
-    cs: 'Konvertor PDF na DOCX - Bezplatný online konvertor PDF na Word'
+  const config = {
+    id: 'pdf-to-docx',
+    name: {
+      en: 'PDF to DOCX Converter',
+      hu: 'PDF DOCX konvertáló',
+      sk: 'PDF na DOCX konvertor',
+      de: 'PDF zu DOCX Konverter',
+      pl: 'Konwerter PDF na DOCX',
+      ro: 'Convertor PDF la DOCX',
+      cs: 'Konvertor PDF na DOCX'
+    },
+    description: {
+      en: 'Convert PDF to DOCX format instantly. Free online PDF to Word converter. No registration required, secure file processing.',
+      hu: 'Konvertálj PDF-et DOCX formátumba azonnal. Ingyenes online PDF Word konvertáló. Regisztráció nélkül, biztonságos fájlfeldolgozás.',
+      sk: 'Konvertujte PDF na DOCX formát okamžite. Bezplatný online PDF na Word konvertor. Bez registrácie, bezpečné spracovanie súborov.',
+      de: 'Konvertieren Sie PDF sofort in DOCX-Format. Kostenloser Online-PDF-zu-Word-Konverter. Keine Registrierung erforderlich, sichere Dateiverarbeitung.',
+      pl: 'Konwertuj PDF na format DOCX natychmiast. Darmowy online konwerter PDF na Word. Bez rejestracji, bezpieczne przetwarzanie plików.',
+      ro: 'Convertește PDF în format DOCX instant. Convertor online gratuit PDF la Word. Fără înregistrare, procesare sigură a fișierelor.',
+      cs: 'Převádějte PDF na formát DOCX okamžitě. Bezplatný online konvertor PDF na Word. Bez registrace, bezpečné zpracování souborů.'
+    },
+    inputFormat: 'pdf',
+    outputFormat: 'docx'
   }
 
-  const descriptions = {
-    en: 'Convert PDF to DOCX format instantly. Free online PDF to Word converter. No registration required, secure file processing.',
-    hu: 'Konvertálj PDF-et DOCX formátumba azonnal. Ingyenes online PDF Word konvertáló. Regisztráció nélkül, biztonságos fájlfeldolgozás.',
-    sk: 'Konvertujte PDF na DOCX formát okamžite. Bezplatný online PDF na Word konvertor. Bez registrácie, bezpečné spracovanie súborov.',
-    de: 'Konvertieren Sie PDF sofort in DOCX-Format. Kostenloser Online-PDF-zu-Word-Konverter. Keine Registrierung erforderlich, sichere Dateiverarbeitung.',
-    pl: 'Konwertuj PDF na format DOCX natychmiast. Darmowy online konwerter PDF na Word. Bez rejestracji, bezpieczne przetwarzanie plików.',
-    ro: 'Convertește PDF în format DOCX instant. Convertor online gratuit PDF la Word. Fără înregistrare, procesare sigură a fișierelor.',
-    cs: 'Převádějte PDF na formát DOCX okamžitě. Bezplatný online konvertor PDF na Word. Bez registrace, bezpečné zpracování souborů.'
-  }
-
-  return {
-    title: titles[locale as keyof typeof titles] || titles.en,
-    description: descriptions[locale as keyof typeof descriptions] || descriptions.en,
-  }
+  return generateConverterMetadata(config, locale)
 }
 
 export default function PdfToDocxPage({ params }: Props) {

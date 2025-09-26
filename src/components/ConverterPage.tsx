@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { Metadata } from 'next'
 import { 
   CloudArrowUpIcon, 
   DocumentTextIcon, 
@@ -11,6 +12,7 @@ import {
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
 import { validateFile, getSupportedFormatsForConverter, getMimeTypesForConverter } from '@/lib/validation'
+import { generateHreflangTags, generateCanonicalUrl } from '@/lib/seo'
 import ProgressIndicator from './ProgressIndicator'
 
 interface ConverterConfig {

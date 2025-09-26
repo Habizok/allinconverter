@@ -7,6 +7,7 @@ export interface FileValidationOptions {
   maxSize: number // in bytes
   allowedTypes: string[]
   allowedExtensions: string[]
+  checkMagicBytes?: boolean // Whether to check file magic bytes
 }
 
 export function validateFile(file: File, options: FileValidationOptions): ValidationResult {
