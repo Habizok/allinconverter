@@ -10,6 +10,8 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
+import { validateFile, getSupportedFormatsForConverter, getMimeTypesForConverter } from '@/lib/validation'
+import ProgressIndicator from './ProgressIndicator'
 
 interface ConverterConfig {
   id: string
@@ -34,6 +36,7 @@ interface FileItem {
   progress: number
   downloadUrl?: string
   error?: string
+  jobId?: string
 }
 
 export default function ConverterPage({ config, locale }: ConverterPageProps) {
@@ -44,10 +47,47 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
     return text[locale] || text.en || ''
   }
 
-  const handleFileSelect = useCallback((selectedFiles: FileList | null) => {
+  const handleFileSelect = useCallback(async (selectedFiles: FileList | null) => {
     if (!selectedFiles) return
 
-    const newFiles: FileItem[] = Array.from(selectedFiles).map(file => ({
+    // Validate files before processing
+    const maxSize = 512 * 1024 * 1024 // 512MB
+    const allowedExtensions = getSupportedFormatsForConverter(config.id)
+    const allowedTypes = getMimeTypesForConverter(config.id)
+
+    const validFiles: File[] = []
+    const invalidFiles: { file: File; error: string }[] = []
+
+    Array.from(selectedFiles).forEach(file => {
+      const validation = validateFile(file, {
+        maxSize,
+        allowedTypes,
+        allowedExtensions
+      })
+
+      if (validation.isValid) {
+        validFiles.push(file)
+      } else {
+        invalidFiles.push({ file, error: validation.error || 'Invalid file' })
+      }
+    })
+
+    // Show validation errors
+    if (invalidFiles.length > 0) {
+      invalidFiles.forEach(({ file, error }) => {
+        const fileItem: FileItem = {
+          id: Math.random().toString(36).substr(2, 9),
+          file,
+          status: 'error',
+          progress: 0,
+          error
+        }
+        setFiles(prev => [...prev, fileItem])
+      })
+    }
+
+    // Process valid files
+    const newFiles: FileItem[] = validFiles.map(file => ({
       id: Math.random().toString(36).substr(2, 9),
       file,
       status: 'uploading' as const,
@@ -56,29 +96,112 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
 
     setFiles(prev => [...prev, ...newFiles])
 
-    // Simulate file processing
-    newFiles.forEach(fileItem => {
-      setTimeout(() => {
-        setFiles(prev => prev.map(f => 
-          f.id === fileItem.id 
-            ? { ...f, status: 'processing', progress: 50 }
-            : f
-        ))
-      }, 1000)
+    // Process each file
+    for (const fileItem of newFiles) {
+      try {
+        // Upload file and create conversion job
+        const formData = new FormData()
+        formData.append('file', fileItem.file)
+        formData.append('converter', config.id)
+        formData.append('options', JSON.stringify({}))
 
-      setTimeout(() => {
+        const response = await fetch('/api/convert', {
+          method: 'POST',
+          body: formData
+        })
+
+        if (!response.ok) {
+          throw new Error('Upload failed')
+        }
+
+        const result = await response.json()
+        
+        // Update file with job ID and start processing
         setFiles(prev => prev.map(f => 
           f.id === fileItem.id 
-            ? { 
-                ...f, 
-                status: 'completed', 
-                progress: 100,
-                downloadUrl: `#download-${fileItem.id}`
-              }
+            ? { ...f, status: 'processing', progress: 10, jobId: result.jobId }
             : f
         ))
-      }, 3000)
-    })
+
+        // Start polling for job status
+        pollJobStatus(fileItem.id, result.jobId)
+
+      } catch (error) {
+        setFiles(prev => prev.map(f => 
+          f.id === fileItem.id 
+            ? { ...f, status: 'error', error: error instanceof Error ? error.message : 'Upload failed' }
+            : f
+        ))
+      }
+    }
+  }, [config.id])
+
+  const pollJobStatus = useCallback(async (fileId: string, jobId: string) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/status/${jobId}`)
+        if (!response.ok) {
+          throw new Error('Status check failed')
+        }
+
+        const status = await response.json()
+        
+        setFiles(prev => prev.map(f => {
+          if (f.id === fileId) {
+            const newFile = { ...f }
+            
+            switch (status.status) {
+              case 'pending':
+                newFile.status = 'processing'
+                newFile.progress = 10
+                break
+              case 'downloading':
+                newFile.status = 'processing'
+                newFile.progress = 20
+                break
+              case 'processing':
+                newFile.status = 'processing'
+                newFile.progress = 50
+                break
+              case 'uploading':
+                newFile.status = 'processing'
+                newFile.progress = 80
+                break
+              case 'completed':
+                newFile.status = 'completed'
+                newFile.progress = 100
+                newFile.downloadUrl = status.downloadUrl
+                clearInterval(pollInterval)
+                break
+              case 'failed':
+                newFile.status = 'error'
+                newFile.error = status.error || 'Conversion failed'
+                clearInterval(pollInterval)
+                break
+            }
+            
+            return newFile
+          }
+          return f
+        }))
+
+        // Stop polling if job is completed or failed
+        if (status.status === 'completed' || status.status === 'failed') {
+          clearInterval(pollInterval)
+        }
+
+      } catch (error) {
+        setFiles(prev => prev.map(f => 
+          f.id === fileId 
+            ? { ...f, status: 'error', error: 'Status check failed' }
+            : f
+        ))
+        clearInterval(pollInterval)
+      }
+    }, 2000) // Poll every 2 seconds
+
+    // Cleanup interval after 5 minutes
+    setTimeout(() => clearInterval(pollInterval), 300000)
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -101,27 +224,6 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
     setFiles(prev => prev.filter(f => f.id !== id))
   }
 
-  const getStatusIcon = (status: FileItem['status']) => {
-    switch (status) {
-      case 'uploading':
-      case 'processing':
-        return <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
-      case 'completed':
-        return <CheckCircleIcon className="h-4 w-4 text-green-500" />
-      case 'error':
-        return <ExclamationTriangleIcon className="h-4 w-4 text-red-500" />
-    }
-  }
-
-  const getStatusText = (status: FileItem['status']) => {
-    const statusTexts = {
-      uploading: { en: 'Uploading...', hu: 'Feltöltés...', sk: 'Nahrávanie...', de: 'Hochladen...', pl: 'Przesyłanie...', ro: 'Se încarcă...', cs: 'Nahrávání...' },
-      processing: { en: 'Processing...', hu: 'Feldolgozás...', sk: 'Spracovanie...', de: 'Verarbeitung...', pl: 'Przetwarzanie...', ro: 'Se procesează...', cs: 'Zpracování...' },
-      completed: { en: 'Ready', hu: 'Kész', sk: 'Pripravené', de: 'Fertig', pl: 'Gotowe', ro: 'Gata', cs: 'Připraveno' },
-      error: { en: 'Error', hu: 'Hiba', sk: 'Chyba', de: 'Fehler', pl: 'Błąd', ro: 'Eroare', cs: 'Chyba' }
-    }
-    return getLocalizedText(statusTexts[status])
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -208,7 +310,7 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
             id="file-input"
             type="file"
             multiple
-            accept={config.supportedFormats.join(',')}
+            accept={getSupportedFormatsForConverter(config.id).join(',')}
             onChange={(e) => handleFileSelect(e.target.files)}
             className="hidden"
           />
@@ -232,7 +334,15 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
               {files.map((file) => (
                 <div key={file.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center space-x-3 flex-1">
-                    {getStatusIcon(file.status)}
+                    <div className="flex-shrink-0">
+                      {file.status === 'uploading' || file.status === 'processing' ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
+                      ) : file.status === 'completed' ? (
+                        <CheckCircleIcon className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <ExclamationTriangleIcon className="h-4 w-4 text-red-500" />
+                      )}
+                    </div>
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">{file.file.name}</p>
                       <p className="text-xs text-gray-500">
@@ -242,21 +352,17 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
                   </div>
                   
                   <div className="flex items-center space-x-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="w-32 bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${file.progress}%` }}
-                        />
-                      </div>
-                    </div>
+                    <ProgressIndicator 
+                      status={file.status}
+                      progress={file.progress}
+                      error={file.error}
+                    />
                     
-                    <span className="text-sm text-gray-500 min-w-0">
-                      {getStatusText(file.status)}
-                    </span>
-                    
-                    {file.status === 'completed' && (
-                      <button className="flex items-center space-x-1 text-green-600 hover:text-green-700">
+                    {file.status === 'completed' && file.downloadUrl && (
+                      <button 
+                        onClick={() => window.open(file.downloadUrl, '_blank')}
+                        className="flex items-center space-x-1 text-green-600 hover:text-green-700"
+                      >
                         <ArrowDownTrayIcon className="h-4 w-4" />
                         <span className="text-sm">
                           {getLocalizedText({
@@ -289,13 +395,13 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
         <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">
             {getLocalizedText({
-              en: 'Why choose our PDF to DOCX converter?',
-              hu: 'Miért válassza a PDF DOCX konvertálónkat?',
-              sk: 'Prečo si vybrať náš PDF na DOCX konvertor?',
-              de: 'Warum unseren PDF-zu-DOCX-Konverter wählen?',
-              pl: 'Dlaczego wybrać nasz konwerter PDF na DOCX?',
-              ro: 'De ce să alegeți convertorul nostru PDF la DOCX?',
-              cs: 'Proč si vybrat náš konvertor PDF na DOCX?'
+              en: `Why choose our ${config.inputFormat} to ${config.outputFormat} converter?`,
+              hu: `Miért válassza a ${config.inputFormat} ${config.outputFormat} konvertálónkat?`,
+              sk: `Prečo si vybrať náš ${config.inputFormat} na ${config.outputFormat} konvertor?`,
+              de: `Warum unseren ${config.inputFormat}-zu-${config.outputFormat}-Konverter wählen?`,
+              pl: `Dlaczego wybrać nasz konwerter ${config.inputFormat} na ${config.outputFormat}?`,
+              ro: `De ce să alegeți convertorul nostru ${config.inputFormat} la ${config.outputFormat}?`,
+              cs: `Proč si vybrat náš konvertor ${config.inputFormat} na ${config.outputFormat}?`
             })}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
