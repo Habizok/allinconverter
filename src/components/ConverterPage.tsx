@@ -15,6 +15,7 @@ import { validateFile, getSupportedFormatsForConverter, getMimeTypesForConverter
 import { generateHreflangTags, generateCanonicalUrl } from '@/lib/seo'
 import ProgressIndicator from './ProgressIndicator'
 import AdSlot from './AdSlot'
+import { useToast } from './Toast'
 
 interface ConverterConfig {
   id: string
@@ -45,6 +46,7 @@ interface FileItem {
 export default function ConverterPage({ config, locale }: ConverterPageProps) {
   const [files, setFiles] = useState<FileItem[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  const { showSuccess, showError, showWarning, showInfo, ToastContainer } = useToast()
 
   const getLocalizedText = (text: Record<string, string>) => {
     return text[locale] || text.en || ''
@@ -75,7 +77,7 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
       }
     })
 
-    // Show validation errors
+    // Show validation errors with toast notifications
     if (invalidFiles.length > 0) {
       invalidFiles.forEach(({ file, error }) => {
         const fileItem: FileItem = {
@@ -86,6 +88,72 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
           error
         }
         setFiles(prev => [...prev, fileItem])
+
+        // Show specific error messages
+        if (error?.includes('File size exceeds')) {
+          showError(
+            getLocalizedText({
+              en: 'File Too Large',
+              hu: 'Fájl túl nagy',
+              sk: 'Súbor príliš veľký',
+              de: 'Datei zu groß',
+              pl: 'Plik za duży',
+              ro: 'Fișier prea mare',
+              cs: 'Soubor příliš velký'
+            }),
+            getLocalizedText({
+              en: `${file.name} exceeds the maximum file size limit.`,
+              hu: `${file.name} meghaladja a maximális fájlméret korlátot.`,
+              sk: `${file.name} prekračuje maximálnu veľkosť súboru.`,
+              de: `${file.name} überschreitet die maximale Dateigröße.`,
+              pl: `${file.name} przekracza maksymalny rozmiar pliku.`,
+              ro: `${file.name} depășește limita maximă de dimensiune a fișierului.`,
+              cs: `${file.name} překračuje maximální velikost souboru.`
+            })
+          )
+        } else if (error?.includes('File type') || error?.includes('File extension')) {
+          showError(
+            getLocalizedText({
+              en: 'Unsupported File Type',
+              hu: 'Nem támogatott fájltípus',
+              sk: 'Nepodporovaný typ súboru',
+              de: 'Nicht unterstützter Dateityp',
+              pl: 'Nieobsługiwany typ pliku',
+              ro: 'Tip de fișier nesuportat',
+              cs: 'Nepodporovaný typ souboru'
+            }),
+            getLocalizedText({
+              en: `${file.name} is not a supported file type for this converter.`,
+              hu: `${file.name} nem támogatott fájltípus ehhez a konverterhez.`,
+              sk: `${file.name} nie je podporovaný typ súboru pre tento konvertor.`,
+              de: `${file.name} ist kein unterstützter Dateityp für diesen Konverter.`,
+              pl: `${file.name} nie jest obsługiwanym typem pliku dla tego konwertera.`,
+              ro: `${file.name} nu este un tip de fișier suportat pentru acest convertor.`,
+              cs: `${file.name} není podporovaný typ souboru pro tento konvertor.`
+            })
+          )
+        } else {
+          showError(
+            getLocalizedText({
+              en: 'File Validation Error',
+              hu: 'Fájl validációs hiba',
+              sk: 'Chyba validácie súboru',
+              de: 'Datei-Validierungsfehler',
+              pl: 'Błąd walidacji pliku',
+              ro: 'Eroare de validare a fișierului',
+              cs: 'Chyba validace souboru'
+            }),
+            error || getLocalizedText({
+              en: 'An error occurred while validating the file.',
+              hu: 'Hiba történt a fájl validálása során.',
+              sk: 'Pri validácii súboru sa vyskytla chyba.',
+              de: 'Bei der Datei-Validierung ist ein Fehler aufgetreten.',
+              pl: 'Wystąpił błąd podczas walidacji pliku.',
+              ro: 'A apărut o eroare la validarea fișierului.',
+              cs: 'Při validaci souboru došlo k chybě.'
+            })
+          )
+        }
       })
     }
 
@@ -126,15 +194,77 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
             : f
         ))
 
+        // Show success toast for upload
+        showSuccess(
+          getLocalizedText({
+            en: 'Upload Successful',
+            hu: 'Feltöltés sikeres',
+            sk: 'Nahrávanie úspešné',
+            de: 'Upload erfolgreich',
+            pl: 'Przesłanie udane',
+            ro: 'Încărcare reușită',
+            cs: 'Nahrávání úspěšné'
+          }),
+          getLocalizedText({
+            en: `${fileItem.file.name} has been uploaded and conversion started.`,
+            hu: `${fileItem.file.name} feltöltve és a konverzió elindult.`,
+            sk: `${fileItem.file.name} bolo nahrané a konverzia sa začala.`,
+            de: `${fileItem.file.name} wurde hochgeladen und die Konvertierung gestartet.`,
+            pl: `${fileItem.file.name} zostało przesłane i konwersja rozpoczęta.`,
+            ro: `${fileItem.file.name} a fost încărcat și conversia a început.`,
+            cs: `${fileItem.file.name} bylo nahráno a konverze byla zahájena.`
+          })
+        )
+
         // Start polling for job status
         pollJobStatus(fileItem.id, result.jobId)
 
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Upload failed'
+        
         setFiles(prev => prev.map(f => 
           f.id === fileItem.id 
-            ? { ...f, status: 'error', error: error instanceof Error ? error.message : 'Upload failed' }
+            ? { ...f, status: 'error', error: errorMessage }
             : f
         ))
+
+        // Show error toast with retry option
+        showError(
+          getLocalizedText({
+            en: 'Upload Failed',
+            hu: 'Feltöltés sikertelen',
+            sk: 'Nahrávanie zlyhalo',
+            de: 'Upload fehlgeschlagen',
+            pl: 'Przesłanie nieudane',
+            ro: 'Încărcare eșuată',
+            cs: 'Nahrávání selhalo'
+          }),
+          getLocalizedText({
+            en: `Failed to upload ${fileItem.file.name}. Please try again.`,
+            hu: `${fileItem.file.name} feltöltése sikertelen. Kérjük, próbálja újra.`,
+            sk: `Nepodarilo sa nahrať ${fileItem.file.name}. Skúste to znova.`,
+            de: `Fehler beim Hochladen von ${fileItem.file.name}. Bitte versuchen Sie es erneut.`,
+            pl: `Nie udało się przesłać ${fileItem.file.name}. Spróbuj ponownie.`,
+            ro: `Nu s-a putut încărca ${fileItem.file.name}. Vă rugăm să încercați din nou.`,
+            cs: `Nepodařilo se nahrát ${fileItem.file.name}. Zkuste to prosím znovu.`
+          }),
+          {
+            label: getLocalizedText({
+              en: 'Retry',
+              hu: 'Újrapróbálás',
+              sk: 'Skúsiť znova',
+              de: 'Wiederholen',
+              pl: 'Spróbuj ponownie',
+              ro: 'Încearcă din nou',
+              cs: 'Zkusit znovu'
+            }),
+            onClick: () => {
+              // Remove the failed file and retry
+              setFiles(prev => prev.filter(f => f.id !== fileItem.id))
+              handleFileSelect([fileItem.file])
+            }
+          }
+        )
       }
     }
   }, [config.id])
@@ -229,11 +359,12 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
-        <div className="flex gap-8">
-          {/* Main Content */}
-          <div className="flex-1">
+    <>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+        <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
+          <div className="flex gap-8">
+            {/* Main Content */}
+            <div className="flex-1">
             {/* Inline Top Ad */}
             <AdSlot position="inline-top" className="mb-8" size="leaderboard" />
 
@@ -302,6 +433,29 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
                 cs: `Podporuje soubory ${config.inputFormat} až do ${config.maxFileSize}`
               })}
             </p>
+            
+            {/* File format help */}
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start space-x-2">
+                <InformationCircleIcon className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium mb-1">
+                    {getLocalizedText({
+                      en: 'Supported file formats:',
+                      hu: 'Támogatott fájlformátumok:',
+                      sk: 'Podporované formáty súborov:',
+                      de: 'Unterstützte Dateiformate:',
+                      pl: 'Obsługiwane formaty plików:',
+                      ro: 'Formate de fișiere suportate:',
+                      cs: 'Podporované formáty souborů:'
+                    })}
+                  </p>
+                  <p className="text-blue-700">
+                    {getSupportedFormatsForConverter(config.id).map(ext => ext.toUpperCase()).join(', ')}
+                  </p>
+                </div>
+              </div>
+            </div>
             <button className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200">
               {getLocalizedText({
                 en: 'Choose Files',
@@ -437,6 +591,7 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
           </div>
         </div>
       </div>
-    </div>
+      <ToastContainer />
+    </>
   )
 }
