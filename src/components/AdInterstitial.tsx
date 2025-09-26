@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
+import { useAdvertisingConsent } from '@/components/ConsentProvider'
+import AdSlot from './AdSlot'
 
 interface AdInterstitialProps {
   isOpen: boolean
@@ -13,6 +15,7 @@ interface AdInterstitialProps {
 export default function AdInterstitial({ isOpen, onClose, onProceed, locale }: AdInterstitialProps) {
   const [countdown, setCountdown] = useState(3)
   const [canClose, setCanClose] = useState(false)
+  const hasAdvertisingConsent = useAdvertisingConsent()
 
   const getLocalizedText = (text: Record<string, string>) => {
     return text[locale] || text.en || ''
@@ -141,31 +144,12 @@ export default function AdInterstitial({ isOpen, onClose, onProceed, locale }: A
           </div>
 
           {/* Ad Space */}
-          <div className="bg-gray-100 rounded-lg p-4 mb-6 text-center">
-            <div className="text-sm text-gray-500 mb-2">
-              {getLocalizedText({
-                en: 'Advertisement',
-                hu: 'Hirdetés',
-                sk: 'Reklama',
-                de: 'Werbung',
-                pl: 'Reklama',
-                ro: 'Reclamă',
-                cs: 'Reklama'
-              })}
-            </div>
-            <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-8">
-              <div className="text-gray-400 text-sm">
-                {getLocalizedText({
-                  en: 'Ad Space',
-                  hu: 'Hirdetési hely',
-                  sk: 'Reklamný priestor',
-                  de: 'Werbefläche',
-                  pl: 'Miejsce na reklamę',
-                  ro: 'Spațiu publicitar',
-                  cs: 'Reklamní prostor'
-                })}
-              </div>
-            </div>
+          <div className="mb-6">
+            <AdSlot 
+              position="modal" 
+              size="rectangle" 
+              className="w-full h-48"
+            />
           </div>
 
           {/* Countdown */}

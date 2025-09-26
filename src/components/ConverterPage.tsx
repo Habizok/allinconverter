@@ -14,6 +14,7 @@ import {
 import { validateFile, getSupportedFormatsForConverter, getMimeTypesForConverter } from '@/lib/validation'
 import { generateHreflangTags, generateCanonicalUrl } from '@/lib/seo'
 import ProgressIndicator from './ProgressIndicator'
+import AdSlot from './AdSlot'
 
 interface ConverterConfig {
   id: string
@@ -229,9 +230,15 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <div className="mx-auto max-w-4xl px-6 py-8 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-8">
+      <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
+        <div className="flex gap-8">
+          {/* Main Content */}
+          <div className="flex-1">
+            {/* Inline Top Ad */}
+            <AdSlot position="inline-top" className="mb-8" size="leaderboard" />
+
+            {/* Header */}
+            <div className="text-center mb-8">
           <div className="flex items-center justify-center space-x-3 mb-4">
             <DocumentTextIcon className="h-8 w-8 text-blue-600" />
             <h1 className="text-3xl font-bold text-gray-900">
@@ -393,8 +400,11 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
           </div>
         )}
 
-        {/* Features */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8">
+            {/* Inline Bottom Ad */}
+            <AdSlot position="inline-bottom" className="mb-8" size="leaderboard" />
+
+            {/* Features */}
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">
             {getLocalizedText({
               en: `Why choose our ${config.inputFormat} to ${config.outputFormat} converter?`,
@@ -415,6 +425,15 @@ export default function ConverterPage({ config, locale }: ConverterPageProps) {
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+          </div>
+
+          {/* Sidebar */}
+          <div className="hidden lg:block w-80 flex-shrink-0">
+            <div className="sticky top-8">
+              <AdSlot position="sidebar" size="skyscraper" />
+            </div>
           </div>
         </div>
       </div>
